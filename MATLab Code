@@ -1,0 +1,389 @@
+%GIVENS 
+positions = [172, 348, 512, 688, 852, 1028];
+loads = [66.7,66.7,66.7,66.7,66.7,66.7];
+
+L = 1200;
+
+Rxn_B = (loads(1)*positions(1) + loads(2)*positions(2)+ loads(3)*positions(3)+ loads(4)*positions(4)+ loads(5)*positions(5) + loads(6)*positions(6))/L
+Rxn_A = sum(loads) - Rxn_B
+
+%SFD
+%Initializing parameters
+position_sfd = 0; %Initializing position (@ Point A)
+V_sfd = Rxn_A; %Initializing Shear Force (@ Point A)
+V = V_sfd;
+
+for i = 1:length(positions)
+position_sfd = [position_sfd, positions(i)]
+V_sfd = [V_sfd, V_sfd(end)]
+
+% Recording the drop in values
+
+position_sfd = [position_sfd, positions(i)]
+V = V - loads(i)
+V_sfd(end+1) = V
+end
+
+% End of bridge
+position_sfd(end+1) = L;
+V_sfd(end+1) = V;
+
+% Plotting SFD
+
+figure; % Open the first figure
+plot(position_sfd, V_sfd, "b-")
+title("Shear Force Diagram") % Graph Title
+xlabel("Position of Train (mm)") % X Label
+ylabel("Shear Force (N)") % Y Label
+%BMD
+% Creating empty array for BMD
+bend_momts = zeros(size(V_sfd));
+bend_momts(1) = 0 %Initializing BMD
+
+% Find area under SFD
+
+for i = 2:length(V_sfd)
+width = position_sfd(i) - position_sfd(i-1); % width
+height = V_sfd(i-1); % height
+rectangular_area = height * width %rectangular area
+bend_momts(i) = bend_momts(i-1) + rectangular_area
+end
+
+% Plot BMD
+
+figure;
+plot(position_sfd, bend_momts, "r")
+title("Bending Moment Diagram")
+xlabel("Position of Train (mm)")
+ylabel("Bending Moment (Nm)")
+set(gca, "YDir", "reverse"); % Reverse signs of diagram due to sign convention of BMD
+
+%Label each data point
+
+arrayfun(@(x, y) text(x, y, sprintf('%0.2f', y), 'VerticalAlignment', 'bottom'), ...
+position_sfd, bend_momts);
+
+%SFD + BMD ENVELOPES
+% Initializing parameters
+positions_env = positions - 172;
+increments = 150; % moving the train 150 positions across the bridge
+delta = (1200-856)/(increments); % this is the allowable domain of the train
+     
+% Initializing to store SFD and BMD
+max_bends = NaN(1, L+1);
+max_Vs = NaN(1, L+1);
+
+% Iterations
+for n = 1:increments
+    if n > 1
+        positions_env = positions_env + delta;
+    end
+% Rxn Forces
+Rxn_B = sum(loads * positions_env')/L;
+Rxn_A = sum(loads) - Rxn_B;
+
+% Initial shear force
+
+x_axis_sfd = 0:L;
+V_sfd = zeros(size(x_axis_sfd));
+
+
+% Calulate shear at every position
+
+for i = 1:length(x_axis_sfd)
+    % Initialize the shear force
+    V_sfd(i) = Rxn_A; % Reaction force at A
+
+    % Subtract the loads that are to the left of the current position
+    for j = 1:length(positions_env)
+        if positions_env(j) <= x_axis_sfd(i)
+            V_sfd(i) = V_sfd(i) - loads(j);
+        end
+    end
+end
+
+
+% Update max shear force and keep previous one
+max_Vs = max(max_Vs, abs(V_sfd));
+V_env(n+1,:) = V_sfd;
+
+
+% Calculate bending moments using rectangular nature of SFD
+
+bend_momts = zeros(size(x_axis_sfd));
+for i = 2:length(x_axis_sfd)
+    width = x_axis_sfd(i) - x_axis_sfd(i-1);
+    height = V_sfd(i-1);
+    rectangular_area = height * width;
+    bend_momts(i) = bend_momts(i-1) + rectangular_area;
+end
+
+% Update max bend. moment and store max
+max_bends = max(max_bends, abs(bend_momts));
+bend_env(n+1, :) = bend_momts;
+
+end
+
+% Plot SFD Envelopes
+tiledlayout(2,1);
+graph1 = nexttile;
+hold(graph1, "on");
+for i = 1:increments
+    plot(graph1, x_axis_sfd, V_env(n, :), "y-")
+end
+
+% Plot Max SFD
+plot(graph1, x_axis_sfd, max_Vs, "LineWidth", 2);
+ylabel(graph1, "Shear Force (N)");
+title(graph1, "Shear Force Diagrams and Envelope");
+xlabel(graph1, "Position of Train Across Bridge (mm)");
+grid(graph1, "on");
+
+% Plotting Max BMD
+
+graph2 = nexttile;
+hold(graph2, "on");
+for i = 1:increments
+    plot(graph1, x_axis_sfd, bend_env(n, :), "b-");
+end
+
+% Plot Max BMD
+plot(graph2, x_axis_sfd, max_bends, "LineWidth" , 2);
+ylabel(graph2, "Bending Moment (Nmm)");
+title(graph2, "Bending Moment Diagrams and Envelope");
+xlabel(graph2, "Position of Train Across Bridge (mm)");
+grid(graph2, "on");
+
+%VARIABLE BRIDGE GEOMETRY 
+% Deck Depth (Part #1 in Design 0)
+depth = 1.27;  
+
+% Deck Width (Part #1 in Design 0)
+width = 100;
+
+% Left and right are symmetrical (Part #4 in Design 0)
+base_left_right_depth = 1.27;
+base_left_right_height = 75;
+
+% bottom support connecting left and right (Part #6 in Design 0)
+base_bottom_width_with_depth = 80;
+base_bottom_depth = 1.27;
+base_bottom_width = base_bottom_width_with_depth - (base_left_right_depth)*2;
+
+flange = (width - base_bottom_width_with_depth)/2;
+diaphragm_separation = 400; % a
+diaphragm_height = 75;
+diaphragm_thickness = 1.27;
+
+% 2 glue tabs are symmetrical
+glue_piece_depth = 1.27;
+glue_piece_width = 5;
+
+total_height = base_left_right_height + depth;
+
+%Y BAR CALCULATIONS
+% Calculating individual centroids
+y_deck = total_height - (depth)/2;
+y_base_left_right = base_left_right_height/2;
+y_base_bottom = base_bottom_depth/2;
+y_glue_piece = total_height - depth - glue_piece_depth/2;
+
+% Calculating individual areas
+area_deck = width * depth;
+area_base_left_right = base_left_right_height * base_left_right_depth;
+area_base_bottom = base_bottom_depth * base_bottom_width;
+area_glue_piece = glue_piece_width * glue_piece_depth;
+
+% Calculating Total Area
+total_area = area_deck + 2*area_base_left_right + area_base_bottom + 2*area_glue_piece;
+
+% Calculating Y bar
+y_bar = (area_deck*y_deck +2*(y_base_left_right*area_base_left_right) + y_base_bottom * area_base_bottom + 2*(y_glue_piece*area_glue_piece))/total_area
+
+%I CALCULATIONS
+% Calculate inidividial I
+i_deck = (width * depth^3)/12;
+i_base_left_right = (base_left_right_depth * base_left_right_height^3)/12;
+i_base_bottom = (base_bottom_width * base_left_right_depth^3)/12;
+i_glue_piece = (glue_piece_width * glue_piece_depth^3)/12;
+
+% Calculate distance from individual centroids to the ground
+d_deck = y_deck - y_bar;
+d_base_left_right = y_bar - y_base_left_right;
+d_base_bottom = y_bar - y_base_bottom;
+d_glue_piece = y_glue_piece - y_bar;
+
+% I cumulated
+total_i = (i_deck +area_deck*d_deck^2) + 2*(i_base_left_right + area_base_left_right* d_base_left_right^2) + (i_base_bottom + area_base_bottom*d_base_bottom^2) + 2*(i_glue_piece + area_glue_piece*d_glue_piece^2)
+
+%Q(x) CALCULATIONS
+% Q at the centroid, (Design 0)
+Q_centroid = area_base_bottom * d_base_bottom + 2*(y_bar*base_bottom_depth*(y_bar/2))
+Q_glue = area_deck*(total_height - y_bar - depth/2)
+%CALCULATING APPLIED STRESSES
+% Matboard (given)
+tensile_strength = 30; %(MPa)
+compressive_strength = 6; %(MPa)
+tau_mat = 4; %shear strength (MPa)
+E_mat = 4000; % Young's Modulus (MPa)
+poisson = 0.2 %Poisson's ratio
+glue_strength = 2; %Glue (MPa)
+%CALCULATING MAX STRESSES
+max_moment = max(max_bends(:))
+max_shear = max(max_Vs(:))
+
+%y-bar distance (top) + compress. stress
+y_bar_comp = total_height -y_bar
+compressive_strength_applied = (max_moment*y_bar_comp)/total_i
+
+%tensile stress
+tensile_stress_applied = (max_moment*y_bar)/total_i
+
+%tau centroid
+Tau_max_centroid = (max_shear*Q_centroid)/(total_i*2*depth)
+
+% Tau glue
+Tau_max_glue = (max_shear*Q_glue)/(total_i*2*(glue_piece_width))
+
+%THIN PLATE BUCKLING
+% CASE 1
+stress_1 = (4*pi^2*E_mat)/(12*(1-poisson^2))*(depth/base_bottom_width_with_depth)^2
+
+% CASE 2
+stress_2 = (0.425*pi^2*E_mat)/(12*(1-poisson^2))*(depth/flange)^2
+
+% CASE 3
+stress_3 = (6*pi^2*E_mat)/(12*(1-poisson^2))*(diaphragm_thickness/(diaphragm_height-y_bar))^2
+
+% CASE 4
+stress_4 = ((5*pi^2*E_mat)/(12*(1-poisson^2)))*(((diaphragm_thickness/diaphragm_height)^2)+((diaphragm_thickness/diaphragm_separation)^2))
+
+%FOS AGAINST ALL FAILURES
+% compressive FOS
+compressive_FOS = compressive_strength/compressive_strength_applied
+
+% tensile FOS
+tensile_FOS = tensile_strength/tensile_stress_applied
+
+% shear FOS
+shear_FOS = tau_mat/Tau_max_centroid
+
+% glue FOS
+glue_FOS = glue_strength/Tau_max_glue
+
+% Case 1
+buckling_case_1_FOS = stress_1/compressive_strength_applied
+
+% Case 2
+buckling_case_2_FOS = stress_2/compressive_strength_applied
+
+% Case 3
+buckling_case_3_FOS = stress_3/compressive_strength_applied
+
+% Case 4
+buckling_case_4_FOS = stress_4/Tau_max_centroid
+%MINIMUM FOS
+minimum_FOS = min([compressive_FOS, tensile_FOS, shear_FOS, glue_FOS, buckling_case_1_FOS, buckling_case_2_FOS, buckling_case_3_FOS, buckling_case_4_FOS])
+Load_fail_moment = minimum_FOS*sum(loads)
+
+failure_tension = tensile_FOS * (max_bends);
+failure_compression = compressive_FOS * (max_bends);
+V_shear = shear_FOS*max_Vs;
+V_glue = glue_FOS*max_Vs;
+Moment_buck1 = buckling_case_1_FOS*max_bends;
+Moment_buck2 = buckling_case_2_FOS*max_bends;
+Moment_buck3 = buckling_case_3_FOS*max_bends;
+Shear_buck = buckling_case_4_FOS*max_Vs;
+
+%GRAPH PRESENTATION
+% Matboard failure
+figure
+hold on 
+title("Shear Force vs Shear Capacity")
+plot(x_axis_sfd, V_shear, "r")
+plot(x_axis_sfd, max_Vs, "b")
+xlabel("Position across bridge (mm)")
+ylabel("Shear Force (N)")
+legend("Matboard Shear Failure")
+hold off 
+
+% Glue failure
+figure 
+hold on 
+title("Shear Force vs Shear Capacity (Glue Failure)")
+plot(x_axis_sfd, max_Vs, "b")
+xlabel("Position across bridge (mm)")
+ylabel("Shear Force (N)")
+legend("Glue Shear Failure")
+hold off
+
+% Shear buckling failure
+figure
+hold on 
+title("Shear Force vs Shear Capacity (Matboard Shear Buckling Failure)")
+plot(x_axis_sfd, Shear_buck, "r")
+plot(x_axis_sfd, max_Vs, "b")
+legend("Glue Shear Failure")
+xlabel("Position across bridge (mm)")
+ylabel("Shear Force (N)")
+hold off
+
+% Tension failure
+figure
+hold on 
+title("Bending Moment vs Bending Capacity (Tension Failure)")
+plot(x_axis_sfd, failure_tension, "g")
+plot(x_axis_sfd, max_bends, "b")
+set(gcs, "YDir", "reverse"); 
+legend("Matboard Tension Failure ")
+xlabel("Position across bridge (mm)")
+ylabel("Moment (Nmm)")
+hold off
+
+% Compression failure
+figure
+hold on 
+title("Bending Moment vs Bending Capacity (compression failure)")
+plot(x_axis_sfd, failure_compression, "r")
+plot(x_axis_sfd, max_bends, "b")
+set(gcs, "YDir", "reverse"); 
+legend("Matboard Compression Failure ")
+xlabel("Position across bridge (mm)")
+ylabel("Moment (Nmm)")
+hold off
+
+% Case 1
+figure
+hold on 
+title("Bending Moment vs Bending Capacity (compressive flange between webs)")
+plot(x_axis_sfd, Moment_buck1, "r")
+plot(x_axis_sfd, max_bends, "b")
+set(gcs, "YDir", "reverse"); 
+legend("Buckling Case 1 Failure")
+xlabel("Position across bridge (mm)")
+ylabel("Moment (Nmm)")
+hold off
+
+% Case 2
+figure
+hold on 
+title("Bending Moment vs Bending Capacity (compressive flange tips)")
+plot(x_axis_sfd, Moment_buck2, "r")
+plot(x_axis_sfd, max_bends, "b")
+set(gcs, "YDir", "reverse"); 
+legend("Buckling Case 2 Failure")
+xlabel("Position across bridge (mm)")
+ylabel("Moment (Nmm)")
+hold off
+
+% Case 3
+figure
+hold on 
+title("Bending Moment vs Bending Capacity (buckling flexural stress)")
+plot(x_axis_sfd, Moment_buck3, "r")
+plot(x_axis_sfd, max_bends, "b")
+set(gcs, "YDir", "reverse"); 
+legend("Buckling Case 3 Failure")
+xlabel("Position across bridge (mm)")
+ylabel("Moment (Nmm)")
+hold off
